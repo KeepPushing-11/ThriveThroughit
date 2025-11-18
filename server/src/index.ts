@@ -7,29 +7,8 @@ import fs from 'fs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { saveResponse, pgPool } from './db';
-// Optional Redis adapter for horizontal scaling
+// redis adapter will be configured after `io` is created (below)
 let redisAdapterConfigured = false;
-if (process.env.REDIS_URL) {
-  try {
-    // lazy-require redis adapter to avoid dev dependency issues when not set
-    // use the official redis client and socket.io redis adapter
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createAdapter } = require('@socket.io/redis-adapter');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createClient } = require('redis');
-    const pubClient = createClient({ url: process.env.REDIS_URL });
-    const subClient = pubClient.duplicate();
-    Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
-      (io as any).adapter(createAdapter(pubClient, subClient));
-      redisAdapterConfigured = true;
-      console.log('Socket.IO Redis adapter configured');
-    }).catch((err: any) => {
-      console.error('Failed to connect Redis for adapter', err);
-    });
-  } catch (e) {
-    console.warn('Redis adapter not available (install @socket.io/redis-adapter and redis)');
-  }
-}
 import { startPgNotifyListener } from './notifyListener';
 
 dotenv.config();
@@ -62,6 +41,28 @@ const io = new IOServer(server, {
   },
   maxHttpBufferSize: 1e6,
 });
+
+// Optional Redis adapter for horizontal scaling - configure now that `io` exists
+if (process.env.REDIS_URL) {
+  try {
+    // lazy-require redis adapter to avoid dev dependency issues when not set
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createAdapter } = require('@socket.io/redis-adapter');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createClient } = require('redis');
+    const pubClient = createClient({ url: process.env.REDIS_URL });
+    const subClient = pubClient.duplicate();
+    Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
+      (io as any).adapter(createAdapter(pubClient, subClient));
+      redisAdapterConfigured = true;
+      console.log('Socket.IO Redis adapter configured');
+    }).catch((err: any) => {
+      console.error('Failed to connect Redis for adapter', err);
+    });
+  } catch (e) {
+    console.warn('Redis adapter not available (install @socket.io/redis-adapter and redis)');
+  }
+}
 
 // Socket auth middleware: expects handshake.auth.token (JWT)
 io.use((socket, next) => {
