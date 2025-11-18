@@ -51,8 +51,8 @@ export default function App() {
   
   // Set initial active module based on primary module or available modules
   const initialModule = useMemo(() => {
-    if (urlParams.primaryModule && availableModules.includes(urlParams.primaryModule)) {
-      return urlParams.primaryModule;
+    if (urlParams.primaryModule && (availableModules as string[]).includes(urlParams.primaryModule)) {
+      return urlParams.primaryModule as any;
     }
     if (availableModules.length === 1) {
       return availableModules[0];
@@ -281,7 +281,7 @@ export default function App() {
             onModuleChange={handleModuleChange}
             surveyStatus={surveyStatus}
             isAdmin={urlParams.isAdmin}
-            availableModules={availableModules}
+            availableModules={availableModules as string[]}
           />
         )}
       
@@ -365,15 +365,15 @@ export default function App() {
           {activeModule === 'overview' && (
             <>
               <WelcomeBanner
-                currentSurvey={currentSurvey}
+                currentSurvey={currentSurvey as any}
                 isAdmin={urlParams.isAdmin}
-                availableModules={availableModules}
+                availableModules={availableModules as string[]}
               />
               <OverviewDashboard 
                 overallAverages={overallAverages}
                 surveyResponses={surveyResponses}
                 mockData={filteredData}
-                availableModules={availableModules}
+                availableModules={availableModules as ('ai-readiness' | 'leadership' | 'employee-experience')[]}
               />
             </>
           )}
@@ -439,7 +439,8 @@ export default function App() {
                         questionCount: section.totalCount
                       }))}
                         surveyResponses={surveyResponses}
-                        moduleId={'ai-readiness'}
+                          moduleId={'ai-readiness'}
+                          surveyId={urlParams.surveyId}
                     />
                   )}
 
@@ -464,6 +465,7 @@ export default function App() {
                       }))}
                       surveyResponses={surveyResponses}
                       moduleId={'leadership'}
+                      surveyId={urlParams.surveyId}
                     />
                   )}
 
@@ -489,6 +491,8 @@ export default function App() {
                         }))}
                         surveyResponses={surveyResponses}
                         moduleId={'employee-experience'}
+                        scale={'0-10'}
+                        surveyId={urlParams.surveyId}
                       />
 
                       {/* Also render the dedicated Employee Experience section below for parity with other modules */}

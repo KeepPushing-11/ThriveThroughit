@@ -25,7 +25,7 @@ export function MyResponsesResults({ surveyResponses, module }: MyResponsesResul
     if (scale === '1-5') {
       const labels = ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'];
       return labels[numValue - 1] || value;
-    } else if (scale === '1-10') {
+  } else if (scale === '0-10') {
       if (numValue <= 3) return `${value} - Low`;
       if (numValue <= 6) return `${value} - Medium`;
       return `${value} - High`;
@@ -39,7 +39,7 @@ export function MyResponsesResults({ surveyResponses, module }: MyResponsesResul
     
     if (scale === '1-5') {
       return numValue >= 4; // 4 or 5 is positive
-    } else if (scale === '1-10') {
+  } else if (scale === '0-10') {
       return numValue >= 7; // 7-10 is positive
     }
     return false;
@@ -221,7 +221,7 @@ export function MyResponsesResults({ surveyResponses, module }: MyResponsesResul
                                           ))}
                                         </>
                                       )}
-                                      {question.scale === '1-10' && (
+                                      {question.scale === '0-10' && (
                                         <>
                                           {[1,2,3,4,5,6,7,8,9,10].map((num) => (
                                             <div
@@ -386,7 +386,7 @@ export function MyResponsesResults({ surveyResponses, module }: MyResponsesResul
                                   ))}
                                 </>
                               )}
-                              {question.scale === '1-10' && (
+                              {question.scale === '0-10' && (
                                 <>
                                   {[1,2,3,4,5,6,7,8,9,10].map((num) => (
                                     <div

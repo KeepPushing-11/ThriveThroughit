@@ -9,11 +9,11 @@ import {
   setData,
   setError
 } from '../utils/api';
-import type { SurveyCampaign } from '../types/survey';
+import type { SurveyCampaign, ExtendedSurveyCampaign } from '../types/survey';
 
 // Hook for fetching all campaigns
 export function useCampaigns() {
-  const [state, setState] = useState<DataState<SurveyCampaign[]>>(createInitialState());
+  const [state, setState] = useState<DataState<ExtendedSurveyCampaign[]>>(createInitialState());
 
   const fetchData = useCallback(async () => {
     setState(prev => setLoading(prev));
@@ -36,7 +36,7 @@ export function useCampaigns() {
 
 // Hook for fetching a single campaign
 export function useCampaign(campaignId: string | null) {
-  const [state, setState] = useState<DataState<SurveyCampaign>>(createInitialState());
+  const [state, setState] = useState<DataState<ExtendedSurveyCampaign>>(createInitialState());
 
   const fetchData = useCallback(async () => {
     if (!campaignId) {

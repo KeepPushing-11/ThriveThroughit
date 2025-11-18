@@ -21,12 +21,26 @@ async function fetchAPI<T>(
   options: RequestInit = {}
 ): Promise<T> {
   try {
+    // Attach JSON content-type and Authorization if a token exists in localStorage
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> | undefined),
+    };
+
+    try {
+      if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        if (token && !headers['Authorization']) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      }
+    } catch (e) {
+      // localStorage may not be available in some environments; ignore
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {

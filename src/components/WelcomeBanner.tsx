@@ -70,7 +70,7 @@ export function WelcomeBanner({ currentSurvey, isAdmin, availableModules = [] }:
               <div>
                 <p className="font-medium text-blue-900">Survey Status</p>
                 <p className="text-sm text-blue-600">
-                  {currentSurvey.status === 'active' ? 'Currently collecting responses' : 'Survey completed'}
+                  {currentSurvey.status === 'live' ? 'Currently collecting responses' : 'Survey completed'}
                 </p>
               </div>
             </div>

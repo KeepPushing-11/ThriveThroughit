@@ -2,15 +2,58 @@ import express from 'express';
 import http from 'http';
 import { Server as IOServer } from 'socket.io';
 import bodyParser from 'body-parser';
+import path from 'path';
+import fs from 'fs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { saveResponse, pgPool } from './db';
+// Optional Redis adapter for horizontal scaling
+let redisAdapterConfigured = false;
+if (process.env.REDIS_URL) {
+  try {
+    // lazy-require redis adapter to avoid dev dependency issues when not set
+    // use the official redis client and socket.io redis adapter
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createAdapter } = require('@socket.io/redis-adapter');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createClient } = require('redis');
+    const pubClient = createClient({ url: process.env.REDIS_URL });
+    const subClient = pubClient.duplicate();
+    Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
+      (io as any).adapter(createAdapter(pubClient, subClient));
+      redisAdapterConfigured = true;
+      console.log('Socket.IO Redis adapter configured');
+    }).catch((err: any) => {
+      console.error('Failed to connect Redis for adapter', err);
+    });
+  } catch (e) {
+    console.warn('Redis adapter not available (install @socket.io/redis-adapter and redis)');
+  }
+}
 import { startPgNotifyListener } from './notifyListener';
 
 dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
+
+// Serve frontend build if present at repo root `build/` or in `client/build`
+const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+const repoBuildPath = path.join(__dirname, '..', '..', 'build');
+if (fs.existsSync(clientBuildPath)) {
+  app.use(express.static(clientBuildPath));
+  console.log('Serving static files from client/build');
+} else if (fs.existsSync(repoBuildPath)) {
+  app.use(express.static(repoBuildPath));
+  console.log('Serving static files from build/ at repo root');
+} else {
+  console.log('No frontend build found to serve (client/build or build/)');
+}
+
+// Health check endpoint for Render and load balancers
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
 
 const server = http.createServer(app);
 const io = new IOServer(server, {
