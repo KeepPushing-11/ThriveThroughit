@@ -1,0 +1,10 @@
+# Ignore node modules and build artifacts
+node_modules/
+server/node_modules/
+build/
+.env
+.dev_token
+.DS_Store
+npm-debug.log
+package-lock.json
+server/package-lock.json

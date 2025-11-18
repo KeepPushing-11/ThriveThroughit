@@ -18,3 +18,13 @@ export interface SurveyCampaign {
   completionRate: number;
   isActive: boolean;
 }
+
+// Extend SurveyCampaign with optional fields used in the app UI
+export interface ExtendedSurveyCampaign extends SurveyCampaign {
+  companyName?: string;
+  surveyType?: string;
+  targetAudience?: string;
+  responseCount?: number;
+  modules?: ('ai-readiness' | 'leadership' | 'employee-experience')[];
+  primaryModule?: 'ai-readiness' | 'leadership' | 'employee-experience';
+}

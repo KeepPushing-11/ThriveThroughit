@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Badge } from "./ui/badge";
@@ -43,6 +43,10 @@ interface ModuleAnalysisTabProps {
   surveyResponses?: Record<string, string>;
   // Optional: module id for the responses (e.g., 'ai-readiness')
   moduleId?: string;
+  // Optional: survey id (used to join realtime survey room)
+  surveyId?: string;
+  // Scale used by the module (affects percent calculations). '1-5' maps 1..5, '0-10' maps 0..10
+  scale?: '1-5' | '0-10';
 }
 
 export function ModuleAnalysisTab({
@@ -53,9 +57,73 @@ export function ModuleAnalysisTab({
   sectionData = [],
   surveyResponses,
   moduleId
+  , surveyId,
+  scale = '1-5'
 }: ModuleAnalysisTabProps) {
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'all' | 'high-impact' | 'needs-attention'>('all');
+  // Local copy of summary metrics to allow incremental updates without forcing parent refetch
+  const [localSummary, setLocalSummary] = useState(summaryMetrics);
+
+  // keep localSummary in sync when parent props change
+  useEffect(() => {
+    setLocalSummary(summaryMetrics);
+  }, [summaryMetrics]);
+
+  // Realtime incremental updates (if socket available)
+  useEffect(() => {
+    let mounted = true;
+    // lazy import to avoid adding top-level dependency if not used
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { useRealtimeResponses } = require('../client/hooks/useRealtimeResponses');
+      const realtime = useRealtimeResponses();
+      realtime.connect();
+      // join the survey-specific room when surveyId provided so we only receive relevant events
+      if (surveyId) {
+        try { realtime.joinSurvey(surveyId); } catch (e) { /* noop */ }
+      }
+
+      const off = realtime.onResponseCreated((payload: any) => {
+        try {
+          if (!mounted) return;
+          const resp = payload?.response;
+          if (!resp || !resp.answers) return;
+          // determine prefix for this module
+          const prefix = moduleId === 'ai-readiness' ? 'ai-' : moduleId === 'leadership' ? 'leadership-' : 'ee-';
+          const keys = Object.keys(resp.answers || {});
+          const moduleKeys = keys.filter(k => String(k).startsWith(prefix));
+          if (moduleKeys.length === 0) return; // not relevant to this module
+
+          // compute new response average using configured scale
+          const values = moduleKeys.map(k => Number(resp.answers[k]) || 0);
+          const maxPer = scale === '0-10' ? 10 : 5;
+          const avg = values.reduce((s, v) => s + v, 0) / values.length;
+          const percent = (avg / maxPer) * 100;
+
+          setLocalSummary(prev => {
+            const prevCount = prev.responseCount || 0;
+            const prevAvg = prev.positiveAverage || 0;
+            const newCount = prevCount + 1;
+            const newAvg = (prevAvg * prevCount + percent) / newCount;
+            return { ...prev, responseCount: newCount, positiveAverage: newAvg };
+          });
+        } catch (e) {
+          console.error('ModuleAnalysisTab realtime update error', e);
+        }
+      });
+
+      return () => {
+        mounted = false;
+        try { off(); } catch (e) { /* noop */ }
+        try { if (surveyId) realtime.leaveSurvey(surveyId); } catch (e) { /* noop */ }
+        try { realtime.disconnect(); } catch (e) { /* noop */ }
+      };
+    } catch (err) {
+      // hook not available or require failed; skip realtime updates
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleId]);
 
   // Filter questions based on view mode
   const filteredQuestions = questionScores.filter(q => {
@@ -71,10 +139,10 @@ export function ModuleAnalysisTab({
 
   // Mock trend data
   const trendData = [
-    { period: 'Q1', score: summaryMetrics.positiveAverage - 8 },
-    { period: 'Q2', score: summaryMetrics.positiveAverage - 4 },
-    { period: 'Q3', score: summaryMetrics.positiveAverage - 1 },
-    { period: 'Q4', score: summaryMetrics.positiveAverage }
+    { period: 'Q1', score: localSummary.positiveAverage - 8 },
+    { period: 'Q2', score: localSummary.positiveAverage - 4 },
+    { period: 'Q3', score: localSummary.positiveAverage - 1 },
+    { period: 'Q4', score: localSummary.positiveAverage }
   ];
 
   const getScoreColor = (score: number) => {
@@ -99,15 +167,15 @@ export function ModuleAnalysisTab({
             <BarChart3 className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summaryMetrics.positiveAverage.toFixed(1)}%</div>
+            <div className="text-2xl font-bold">{localSummary.positiveAverage.toFixed(1)}%</div>
             <div className="flex items-center gap-1 mt-1">
-              {summaryMetrics.trend >= 0 ? (
+              {localSummary.trend >= 0 ? (
                 <TrendingUp className="h-3 w-3 text-green-600" />
               ) : (
                 <TrendingDown className="h-3 w-3 text-red-600" />
               )}
-              <p className={`text-xs ${summaryMetrics.trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {summaryMetrics.trend >= 0 ? '+' : ''}{summaryMetrics.trend.toFixed(1)}% vs last quarter
+              <p className={`text-xs ${localSummary.trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {localSummary.trend >= 0 ? '+' : ''}{localSummary.trend.toFixed(1)}% vs last quarter
               </p>
             </div>
           </CardContent>
@@ -132,8 +200,8 @@ export function ModuleAnalysisTab({
             <Users className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summaryMetrics.responseCount}</div>
-            <p className="text-xs text-gray-600 mt-1">Across {summaryMetrics.totalQuestions} questions</p>
+            <div className="text-2xl font-bold">{localSummary.responseCount}</div>
+            <p className="text-xs text-gray-600 mt-1">Across {localSummary.totalQuestions} questions</p>
           </CardContent>
         </Card>
 

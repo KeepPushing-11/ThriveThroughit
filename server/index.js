@@ -13,18 +13,22 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static client files. Prefer a built client at client/build if present (for React/Vite builds),
-// otherwise fall back to the simple client/ folder used in the scaffold.
+// otherwise check for a top-level `build/` directory (Vite outDir) and fallback to client/.
 const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+const repoBuildPath = path.join(__dirname, '..', 'build');
 const clientStaticPath = path.join(__dirname, '..', 'client');
 
 if (fs.existsSync(clientBuildPath)) {
   app.use(express.static(clientBuildPath));
   console.log('Serving static files from client/build');
+} else if (fs.existsSync(repoBuildPath)) {
+  app.use(express.static(repoBuildPath));
+  console.log('Serving static files from build/ at repo root');
 } else if (fs.existsSync(clientStaticPath)) {
   app.use(express.static(clientStaticPath));
   console.log('Serving static files from client/');
 } else {
-  console.log('No client static files found (client/ or client/build)');
+  console.log('No client static files found (client/build, build/ or client/)');
 }
 
 // Health endpoint

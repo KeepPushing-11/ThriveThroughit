@@ -12,8 +12,8 @@
 import express from "express";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
-import bodyParser from "body-parser";
-import cors from "cors";
+import bodyParser from "body-parser"; // Ensure no versioned specifiers
+import cors from "cors"; // Ensure no versioned specifiers
 import { spawn } from "child_process";
 
 export type AnalysisUpdate = {

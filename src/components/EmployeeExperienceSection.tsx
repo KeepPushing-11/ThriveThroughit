@@ -405,7 +405,7 @@ export function EmployeeExperienceSection({
                   <Tooltip />
                   <Bar 
                     dataKey="count" 
-                    fill={(entry: any) => entry?.isPositive ? COLORS.positive : COLORS.neutral}
+                    fill={COLORS.neutral}
                   >
                     {distribution1to5.map((entry, index) => (
                       <Cell 
@@ -428,7 +428,7 @@ export function EmployeeExperienceSection({
                   <Tooltip />
                   <Bar 
                     dataKey="count" 
-                    fill={(entry: any) => entry?.isPositive ? COLORS.positive : COLORS.neutral}
+                    fill={COLORS.neutral}
                   >
                     {distribution0to10.map((entry, index) => (
                       <Cell 

@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Toaster } from "./components/ui/sonner";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { OverviewDashboard } from "./components/OverviewDashboard";
 import { ModuleSurveyTab } from "./components/ModuleSurveyTab";
@@ -25,7 +25,9 @@ import {
 } from "./utils/calculations";
 import { useOverviewAnalytics, useAllModuleAnalytics } from "./hooks/useAnalytics";
 import { useCampaign } from "./hooks/useCampaigns";
+import { useRealtimeResponses } from './client/hooks/useRealtimeResponses';
 import { api } from "./utils/api";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 
 // Loading Component
 function LoadingSpinner({ message = "Loading..." }: { message?: string }) {
@@ -81,6 +83,37 @@ export default function App() {
   // Fetch analytics data
   const { data: overviewData, loading: overviewLoading, error: overviewError, refetch: refetchOverview } = useOverviewAnalytics(urlParams.surveyId);
   const moduleAnalytics = useAllModuleAnalytics(urlParams.surveyId);
+
+  // Realtime responses subscription: join survey room and refresh analytics on new responses
+  const realtime = useRealtimeResponses();
+  useEffect(() => {
+    realtime.connect();
+    return () => { realtime.disconnect(); };
+  }, [realtime]);
+
+  useEffect(() => {
+    if (!urlParams.surveyId) return;
+    try { realtime.joinSurvey(urlParams.surveyId); } catch (e) { /* ignore */ }
+    const off = realtime.onResponseCreated((payload) => {
+      try {
+        // If the incoming response belongs to the current survey, refresh analytics
+        if (!payload || !payload.response) return;
+        const respSurveyId = payload.response.surveyId || payload.response.survey || payload.response.survey_id;
+        if (String(respSurveyId) === String(urlParams.surveyId)) {
+          refetchOverview();
+          moduleAnalytics.refetchAll();
+          try { (toast as any)?.success?.('New response received — analytics refreshed'); } catch(e) { /* noop */ }
+        }
+      } catch (err) {
+        console.error('Realtime handler error', err);
+      }
+    });
+
+    return () => {
+      try { off(); } catch (e) { /* noop */ }
+      try { realtime.leaveSurvey(urlParams.surveyId); } catch (e) { /* noop */ }
+    };
+  }, [urlParams.surveyId, realtime, refetchOverview, moduleAnalytics]);
   
   // Local state
   const [activeModule, setActiveModule] = useState(urlParams.primaryModule || (availableModules.length === 1 ? availableModules[0] : 'overview'));
@@ -290,7 +323,7 @@ export default function App() {
           onModuleChange={handleModuleChange}
           surveyStatus={surveyStatus}
           isAdmin={urlParams.isAdmin}
-          availableModules={availableModules}
+          availableModules={availableModules as string[]}
         />
         
         {/* Main Content */}
@@ -352,9 +385,9 @@ export default function App() {
             {activeModule === 'overview' && (
               <>
                 <WelcomeBanner
-                  currentSurvey={currentSurvey}
+                  currentSurvey={currentSurvey as any}
                   isAdmin={urlParams.isAdmin}
-                  availableModules={availableModules}
+                  availableModules={availableModules as string[]}
                 />
                 
                 {overviewData ? (
@@ -370,7 +403,7 @@ export default function App() {
                       leadershipData: [],
                       employeeExperienceData: []
                     }}
-                    availableModules={availableModules}
+                    availableModules={availableModules as ('ai-readiness' | 'leadership' | 'employee-experience')[]}
                   />
                 ) : (
                   <div className="text-center py-12">

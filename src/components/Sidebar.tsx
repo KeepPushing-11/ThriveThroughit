@@ -128,17 +128,17 @@ export function Sidebar({
           const isActive = activeModule === item.id;
           
           return (
-            <Button
+              <Button
               key={item.id}
               variant="ghost"
-              onClick={() => !item.disabled && onModuleChange(item.id)}
-              disabled={item.disabled}
+              onClick={() => !(item as any).disabled && onModuleChange(item.id)}
+              disabled={(item as any).disabled}
               className={cn(
                 "w-full justify-start h-auto p-3 text-left",
                 isActive 
                   ? "bg-blue-50 text-blue-700 border border-blue-200" 
                   : "hover:bg-gray-50",
-                item.disabled && "opacity-50 cursor-not-allowed"
+                (item as any).disabled && "opacity-50 cursor-not-allowed"
               )}
             >
               <div className="flex items-center gap-3 w-full">
