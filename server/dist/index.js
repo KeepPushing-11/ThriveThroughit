@@ -13,30 +13,10 @@ const fs_1 = __importDefault(require("fs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const db_1 = require("./db");
-// Optional Redis adapter for horizontal scaling
+// redis adapter will be configured after `io` is created (below)
 let redisAdapterConfigured = false;
-if (process.env.REDIS_URL) {
-    try {
-        // lazy-require redis adapter to avoid dev dependency issues when not set
-        // use the official redis client and socket.io redis adapter
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { createAdapter } = require('@socket.io/redis-adapter');
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { createClient } = require('redis');
-        const pubClient = createClient({ url: process.env.REDIS_URL });
-        const subClient = pubClient.duplicate();
-        Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
-            io.adapter(createAdapter(pubClient, subClient));
-            redisAdapterConfigured = true;
-            console.log('Socket.IO Redis adapter configured');
-        }).catch((err) => {
-            console.error('Failed to connect Redis for adapter', err);
-        });
-    }
-    catch (e) {
-        console.warn('Redis adapter not available (install @socket.io/redis-adapter and redis)');
-    }
-}
+let redisPubClient = null;
+let redisSubClient = null;
 const notifyListener_1 = require("./notifyListener");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -60,6 +40,38 @@ else {
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
 });
+// Readiness endpoint: checks DB and Redis availability
+app.get('/ready', async (_req, res) => {
+    const status = { db: 'unknown', redis: 'unknown' };
+    try {
+        if (db_1.pgPool) {
+            // try a simple query
+            await db_1.pgPool.query('SELECT 1');
+            status.db = 'ok';
+        }
+        else {
+            status.db = 'noop';
+        }
+    }
+    catch (e) {
+        status.db = 'error';
+    }
+    try {
+        if (redisPubClient) {
+            status.redis = redisPubClient?.isOpen ? 'ok' : 'closed';
+        }
+        else {
+            status.redis = 'noop';
+        }
+    }
+    catch (e) {
+        status.redis = 'error';
+    }
+    const healthy = status.db === 'ok' || status.db === 'noop';
+    const redisOk = status.redis === 'ok' || status.redis === 'noop';
+    const overall = healthy && redisOk ? 'ok' : 'degraded';
+    res.status(overall === 'ok' ? 200 : 503).json({ status: overall, details: status });
+});
 const server = http_1.default.createServer(app);
 exports.server = server;
 const io = new socket_io_1.Server(server, {
@@ -69,6 +81,28 @@ const io = new socket_io_1.Server(server, {
     maxHttpBufferSize: 1e6,
 });
 exports.io = io;
+// Optional Redis adapter for horizontal scaling - configure now that `io` exists
+if (process.env.REDIS_URL) {
+    try {
+        // lazy-require redis adapter to avoid dev dependency issues when not set
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { createAdapter } = require('@socket.io/redis-adapter');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { createClient } = require('redis');
+        redisPubClient = createClient({ url: process.env.REDIS_URL });
+        redisSubClient = redisPubClient.duplicate();
+        Promise.all([redisPubClient.connect(), redisSubClient.connect()]).then(() => {
+            io.adapter(createAdapter(redisPubClient, redisSubClient));
+            redisAdapterConfigured = true;
+            console.log('Socket.IO Redis adapter configured');
+        }).catch((err) => {
+            console.error('Failed to connect Redis for adapter', err);
+        });
+    }
+    catch (e) {
+        console.warn('Redis adapter not available (install @socket.io/redis-adapter and redis)');
+    }
+}
 // Socket auth middleware: expects handshake.auth.token (JWT)
 io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
@@ -138,14 +172,20 @@ app.post('/api/responses', async (req, res) => {
 // Start Postgres NOTIFY listener (optional but useful if responses inserted elsewhere)
 (0, notifyListener_1.startPgNotifyListener)((channel, payload) => {
     try {
-        const data = JSON.parse(payload);
-        if (data.companyId) {
-            io.to(`company:${data.companyId}`).emit(data.event || channel, data);
-            if (data.surveyId)
-                io.to(`company:${data.companyId}:survey:${data.surveyId}`).emit(data.event || channel, data);
+        const data = JSON.parse(payload || '{}');
+        // normalize expected shape: { event, companyId, surveyId, response }
+        const eventName = typeof data.event === 'string' ? data.event : channel;
+        const companyId = data.companyId || data.company_id || data.company;
+        const surveyId = data.surveyId || data.survey_id || data.survey;
+        const response = data.response || data.payload || data.record;
+        const emitPayload = { event: eventName, companyId, surveyId, response };
+        if (companyId) {
+            io.to(`company:${companyId}`).emit(eventName, emitPayload);
+            if (surveyId)
+                io.to(`company:${companyId}:survey:${surveyId}`).emit(eventName, emitPayload);
         }
         else {
-            io.emit(data.event || channel, data);
+            io.emit(eventName, emitPayload);
         }
     }
     catch (err) {
