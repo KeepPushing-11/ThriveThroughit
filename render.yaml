@@ -5,8 +5,16 @@ services:
     region: oregon
     branch: main
     plan: free
-    buildCommand: "npm run build:all && npm run migrate"
+    buildCommand: "npm run build:all"
     startCommand: "npm run start:server"
+    healthCheckPath: "/ready"
+jobs:
+  - name: migrate
+    env: node
+    region: oregon
+    branch: main
+    plan: free
+    command: "npm run migrate"
     envVars:
       - key: JWT_SECRET
         sync: false
