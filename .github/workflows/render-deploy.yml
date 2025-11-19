@@ -1,0 +1,65 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend + server
+        run: npm run build:all
+
+  migrate_and_wait:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_MIGRATE_SERVICE_ID: ${{ secrets.RENDER_MIGRATE_SERVICE_ID }}
+    steps:
+      - name: Trigger Render migrate job
+        id: trigger
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_API_KEY:-}" ]; then echo "Missing RENDER_API_KEY secret"; exit 1; fi
+          if [ -z "${RENDER_MIGRATE_SERVICE_ID:-}" ]; then echo "Missing RENDER_MIGRATE_SERVICE_ID secret"; exit 1; fi
+          echo "Triggering migrate job on Render for service $RENDER_MIGRATE_SERVICE_ID"
+          resp=$(curl -s -X POST "https://api.render.com/v1/services/$RENDER_MIGRATE_SERVICE_ID/jobs" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json")
+          echo "$resp" > render_job_resp.json
+          job_id=$(jq -r '.id // empty' render_job_resp.json)
+          if [ -z "$job_id" ]; then echo "Failed to trigger job:"; cat render_job_resp.json; exit 1; fi
+          echo "Triggered job $job_id"
+          echo "job_id=$job_id" >> $GITHUB_OUTPUT
+
+      - name: Wait for migrate job to finish
+        run: |
+          set -euo pipefail
+          JOB_ID=${{ steps.trigger.outputs.job_id }}
+          SERVICE_ID=${RENDER_MIGRATE_SERVICE_ID}
+          echo "Polling job $JOB_ID"
+          for i in $(seq 1 120); do
+            status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/$SERVICE_ID/jobs/$JOB_ID" | jq -r '.status')
+            echo "status=$status"
+            if [ "$status" = "succeeded" ]; then echo "Job succeeded"; exit 0; fi
+            if [ "$status" = "failed" ]; then echo "Job failed"; exit 1; fi
+            sleep 5
+          done
+          echo "Timed out waiting for job"; exit 1
